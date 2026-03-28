@@ -46,6 +46,3 @@ The AI’s thoughts are displayed in the top‑left corner.
 ## License
 
 [GNU Lesser General Public License v2.1](LICENSE) - Feel free to use and modify
----
-
-**Created with ❤️ for the joy of endless running.**
