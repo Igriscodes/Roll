@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROLL — Endless Runner (Multi-threaded)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;overflow:hidden;font-family:'Space Mono',monospace}
+  #c{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10}
+  #score-wrap{position:absolute;top:28px;left:50%;transform:translateX(-50%);text-align:center}
+  #score-label{font-family:'Orbitron',monospace;font-size:11px;letter-spacing:6px;color:rgba(255,255,255,0.4);text-transform:uppercase}
+  #score{font-family:'Orbitron',monospace;font-size:42px;font-weight:900;color:#fff;line-height:1;text-shadow:0 0 30px rgba(120,220,255,0.8)}
+  #speed-bar-wrap{position:absolute;top:28px;right:28px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  #speed-label{font-family:'Orbitron',monospace;font-size:9px;letter-spacing:4px;color:rgba(255,255,255,0.35)}
+  #speed-bar-bg{width:80px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden}
+  #speed-bar{height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#ff006e);border-radius:2px;transition:width 0.3s}
+  #lane-dots{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);display:flex;gap:12px}
+  .ldot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.2);transition:all 0.15s}
+  .ldot.active{background:#00d4ff;box-shadow:0 0 12px #00d4ff}
+  #ai-badge{position:absolute;top:28px;left:28px;display:flex;align-items:center;gap:8px}
+  #ai-dot{width:8px;height:8px;border-radius:50%;background:#00ff88;box-shadow:0 0 10px #00ff88;animation:pulse 1.2s ease-in-out infinite}
+  #ai-text{font-family:'Orbitron',monospace;font-size:9px;letter-spacing:3px;color:rgba(255,255,255,0.5)}
+  #ai-thought{position:absolute;top:48px;left:28px;font-size:9px;color:rgba(0,255,136,0.5);letter-spacing:1px;max-width:200px;line-height:1.6}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+  #overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:all}
+  #overlay.hidden{display:none}
+  .overlay-bg{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,10,30,0.97) 0%,rgba(0,0,0,0.99) 100%)}
+  .overlay-content{position:relative;text-align:center;z-index:1}
+  .game-title{font-family:'Orbitron',monospace;font-size:88px;font-weight:900;color:#fff;letter-spacing:12px;line-height:1;text-shadow:0 0 60px rgba(0,212,255,0.6),0 0 120px rgba(0,212,255,0.2)}
+  .game-subtitle{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:8px;color:rgba(255,255,255,0.3);margin-top:8px;text-transform:uppercase}
+  .btn{margin-top:48px;padding:16px 48px;background:transparent;border:1px solid rgba(0,212,255,0.6);color:#00d4ff;font-family:'Orbitron',monospace;font-size:13px;font-weight:700;letter-spacing:6px;text-transform:uppercase;cursor:pointer;pointer-events:all;position:relative;overflow:hidden;transition:all 0.2s}
+  .btn::before{content:'';position:absolute;inset:0;background:rgba(0,212,255,0.08);transform:scaleX(0);transform-origin:left;transition:transform 0.2s}
+  .btn:hover::before{transform:scaleX(1)}
+  .btn:hover{border-color:#00d4ff;box-shadow:0 0 30px rgba(0,212,255,0.3);color:#fff}
+  .hint{margin-top:24px;font-size:10px;letter-spacing:4px;color:rgba(255,255,255,0.2)}
+  .final-score-wrap{margin-top:20px}
+  .final-score-label{font-size:10px;letter-spacing:6px;color:rgba(255,255,255,0.3)}
+  .final-score{font-family:'Orbitron',monospace;font-size:64px;font-weight:900;color:#fff;text-shadow:0 0 40px rgba(255,0,110,0.7)}
+  .scan-line{position:absolute;top:0;left:0;width:100%;height:2px;background:linear-gradient(90deg,transparent,rgba(0,212,255,0.4),transparent);animation:scan 3s linear infinite;pointer-events:none}
+  @keyframes scan{0%{top:0}100%{top:100%}}
+  #controls-hint{position:absolute;bottom:28px;left:28px;font-size:9px;letter-spacing:3px;color:rgba(255,255,255,0.2)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="ai-badge">
+    <div id="ai-dot"></div>
+    <div id="ai-text">AI PILOT [WORKER THREAD]</div>
+  </div>
+  <div id="ai-thought"></div>
+  <div id="score-wrap">
+    <div id="score-label">SCORE</div>
+    <div id="score">0</div>
+  </div>
+  <div id="speed-bar-wrap">
+    <div id="speed-label">VELOCITY</div>
+    <div id="speed-bar-bg"><div id="speed-bar"></div></div>
+  </div>
+  <div id="lane-dots">
+    <div class="ldot" id="ld0"></div>
+    <div class="ldot active" id="ld1"></div>
+    <div class="ldot" id="ld2"></div>
+  </div>
+  <div id="controls-hint">← → SWITCH LANES</div>
+</div>
+<div id="overlay">
+  <div class="overlay-bg"></div>
+  <div class="scan-line"></div>
+  <div class="overlay-content" id="start-screen">
+    <div class="game-title">ROLL</div>
+    <div class="game-subtitle">Endless Runner</div>
+    <button class="btn" id="start-btn">START</button>
+    <div class="hint">← → TO SWITCH LANES &nbsp;·&nbsp; AI PILOT INCLUDED</div>
+  </div>
+  <div class="overlay-content hidden" id="gameover-screen">
+    <div class="game-title" style="font-size:56px;letter-spacing:8px;color:#ff006e;text-shadow:0 0 60px rgba(255,0,110,0.6)">GAME OVER</div>
+    <div class="final-score-wrap">
+      <div class="final-score-label">FINAL SCORE</div>
+      <div class="final-score" id="final-score">0</div>
+    </div>
+    <button class="btn" id="restart-btn" style="border-color:rgba(255,0,110,0.6);color:#ff006e;margin-top:32px">RETRY</button>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const aiWorkerCode=`self.onmessage=function(e){const{obstacles,coins,currentLane,dangerDist}=e.data;let lb=[false,false,false];if(obstacles.length){const n=obstacles[0];if(n.dz<=dangerDist)obstacles.forEach(o=>{if(o.dz<Math.min(n.dz+12,30))lb[o.lane]=true;});}const safe=[0,1,2].filter(l=>!lb[l]);if(!safe.length)return self.postMessage({action:'maintain',thought:'thread: bracing...'});let best=currentLane;if(!lb[currentLane]){let cs=[0,0,0];coins.forEach(c=>{if(!lb[c.lane]&&c.dz<50)cs[c.lane]+=50-c.dz;});let ms=0;safe.forEach(l=>{if(cs[l]>ms){ms=cs[l];best=l;}});}else{let md=9;safe.forEach(l=>{let d=Math.abs(l-currentLane);if(d<md){md=d;best=l;}});}self.postMessage(best!==currentLane?{action:'evade',bestLane:best,thought:'thread: plotting course'}:{action:'maintain',thought:'thread: optimal path clear'});};`;
+const blob=new Blob([aiWorkerCode],{type:'application/javascript'}),aiWorker=new Worker(URL.createObjectURL(blob));
+let aiWorking=false,manualOverride=0;
+aiWorker.onmessage=function(e){aiWorking=false;if(manualOverride>0)return;const{action,bestLane,thought}=e.data;aiThoughtEl.textContent=thought;if(action==='evade'&&bestLane!==targetLane){setLane(bestLane);camShake=0.08;}};
+const canvas=document.getElementById('c'),renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
+const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x000814,0.018);scene.background=new THREE.Color(0x000814);
+const camera=new THREE.PerspectiveCamera(65,window.innerWidth/window.innerHeight,0.1,200);camera.position.set(0,5,10);camera.lookAt(0,0,-10);
+window.addEventListener('resize',()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});
+const LANES=[-2.8,0,2.8],CHUNK_LEN=40,TRACK_W=9;
+let gameState='idle',score=0,speed=0,baseSpeed=0.22,maxSpeed=0.95,dist=0,currentLane=1,targetLane=1,laneT=1;
+let playerX=0,playerY=0.55,velY=0,gravity=-0.022,onGround=true,chunks=[],spawnZ=0;
+let clock=new THREE.Clock(),aiThoughtEl=document.getElementById('ai-thought');
+const matTrack=new THREE.MeshStandardMaterial({color:0x0a1628,roughness:0.8,metalness:0.1}),matLine=new THREE.MeshStandardMaterial({color:0x00d4ff,roughness:0.5,metalness:0.8,emissive:0x003344}),matBarrier=new THREE.MeshStandardMaterial({color:0xff006e,roughness:0.3,metalness:0.7,emissive:0x330011}),matRamp=new THREE.MeshStandardMaterial({color:0x7700ff,roughness:0.4,metalness:0.5,emissive:0x110033}),matCoin=new THREE.MeshStandardMaterial({color:0xffcc00,roughness:0.2,metalness:1,emissive:0x443300}),matWall=new THREE.MeshStandardMaterial({color:0x1a0533,roughness:0.6,metalness:0.4});
+const geoTrack=new THREE.BoxGeometry(TRACK_W,0.4,CHUNK_LEN),geoLine=new THREE.BoxGeometry(0.05,0.05,CHUNK_LEN),geoEdge=new THREE.BoxGeometry(0.08,0.08,CHUNK_LEN),geoBarrier=new THREE.BoxGeometry(1.6,1.2,0.5),geoLowBarrier=new THREE.BoxGeometry(1.6,0.4,0.5),geoRamp=new THREE.CylinderGeometry(0,1.4,0.8,4,1);geoRamp.rotateY(Math.PI/4);const geoCoin=new THREE.TorusGeometry(0.28,0.06,8,16);geoCoin.rotateX(Math.PI/2);
+const ambLight=new THREE.AmbientLight(0x112244,0.6);scene.add(ambLight);
+const dirLight=new THREE.DirectionalLight(0xffffff,1.2);dirLight.position.set(5,20,-10);dirLight.castShadow=true;dirLight.shadow.mapSize.set(1024,1024);dirLight.shadow.camera.near=0.1;dirLight.shadow.camera.far=120;dirLight.shadow.camera.left=-30;dirLight.shadow.camera.right=30;dirLight.shadow.camera.top=30;dirLight.shadow.camera.bottom=-30;scene.add(dirLight);
+const ptL1=new THREE.PointLight(0x00d4ff,2,20);scene.add(ptL1);const ptL2=new THREE.PointLight(0xff006e,1.5,30);scene.add(ptL2);
+function makeSideWalls(){const geo=new THREE.BoxGeometry(0.4,2,200),m1=new THREE.Mesh(geo,matWall);m1.position.set(-TRACK_W/2-0.2,0.8,-40);scene.add(m1);const m2=new THREE.Mesh(geo,matWall);m2.position.set(TRACK_W/2+0.2,0.8,-40);scene.add(m2);return[m1,m2];}
+const sideWalls=makeSideWalls();
+function makeStarField(){const geo=new THREE.BufferGeometry(),N=2000,pos=new Float32Array(N*3);for(let i=0;i<N;i++){pos[i*3]=THREE.MathUtils.randFloatSpread(200);pos[i*3+1]=THREE.MathUtils.randFloat(5,80);pos[i*3+2]=THREE.MathUtils.randFloat(-150,20);}geo.setAttribute('position',new THREE.BufferAttribute(pos,3));const mat=new THREE.PointsMaterial({color:0xffffff,size:0.15,sizeAttenuation:true}),stars=new THREE.Points(geo,mat);scene.add(stars);return stars;}
+const stars=makeStarField();
+class Chunk{
+constructor(zBase){this.group=new THREE.Group();this.zBase=zBase;this.group.position.z=zBase;const track=new THREE.Mesh(geoTrack,matTrack);track.position.set(0,-0.2,-CHUNK_LEN/2);track.receiveShadow=true;this.group.add(track);for(let i=0;i<3;i++){const lm=new THREE.Mesh(geoLine,matLine);lm.position.set(LANES[i],0.0,-CHUNK_LEN/2);this.group.add(lm);}const em1=new THREE.Mesh(geoEdge,matLine);em1.position.set(-TRACK_W/2+0.04,0.0,-CHUNK_LEN/2);this.group.add(em1);const em2=new THREE.Mesh(geoEdge,matLine);em2.position.set(TRACK_W/2-0.04,0.0,-CHUNK_LEN/2);this.group.add(em2);this.pool={barrier:[],low:[],ramp:[],coin:[]};this.activeObstacles=[];this.activeCoins=[];for(let i=0;i<12;i++){const mesh=new THREE.Mesh(geoBarrier,matBarrier);mesh.castShadow=true;mesh.visible=false;const glow=new THREE.PointLight(0xff006e,1,4);glow.visible=false;this.group.add(mesh);this.group.add(glow);this.pool.barrier.push({mesh,glow,active:false,type:'barrier'});}for(let i=0;i<8;i++){const mesh=new THREE.Mesh(geoLowBarrier,matBarrier);mesh.castShadow=true;mesh.visible=false;this.group.add(mesh);this.pool.low.push({mesh,active:false,type:'low'});}for(let i=0;i<4;i++){const mesh=new THREE.Mesh(geoRamp,matRamp);mesh.castShadow=true;mesh.visible=false;const glow=new THREE.PointLight(0x7700ff,1.2,5);glow.visible=false;this.group.add(mesh);this.group.add(glow);this.pool.ramp.push({mesh,glow,active:false,type:'ramp'});}for(let i=0;i<15;i++){const mesh=new THREE.Mesh(geoCoin,matCoin);mesh.visible=false;this.group.add(mesh);this.pool.coin.push({mesh,active:false,type:'coin',collected:false});}scene.add(this.group);}
+reset(newZ){this.zBase=newZ;this.group.position.z=newZ;this.activeObstacles.forEach(o=>{o.mesh.visible=false;if(o.glow)o.glow.visible=false;o.active=false;});this.activeCoins.forEach(c=>{c.mesh.visible=false;c.active=false;});this.activeObstacles.length=0;this.activeCoins.length=0;}
+getAvailable(type){return this.pool[type].find(item=>!item.active);}
+}
+function addBarrier(chunk,lane,lz){const item=chunk.getAvailable('barrier');if(!item)return;item.active=true;item.lane=lane;item.mesh.position.set(LANES[lane],0.6,lz-chunk.zBase);item.mesh.visible=true;item.glow.position.copy(item.mesh.position);item.glow.position.y+=0.5;item.glow.visible=true;chunk.activeObstacles.push(item);}
+function addLowBarrier(chunk,lane,lz){const item=chunk.getAvailable('low');if(!item)return;item.active=true;item.lane=lane;item.mesh.position.set(LANES[lane],0.2,lz-chunk.zBase);item.mesh.visible=true;chunk.activeObstacles.push(item);}
+function addRamp(chunk,lane,lz){const item=chunk.getAvailable('ramp');if(!item)return;item.active=true;item.lane=lane;item.mesh.position.set(LANES[lane],0.0,lz-chunk.zBase);item.mesh.visible=true;item.glow.position.copy(item.mesh.position);item.glow.position.y+=1;item.glow.visible=true;chunk.activeObstacles.push(item);}
+function addCoin(chunk,lane,lz,height){const item=chunk.getAvailable('coin');if(!item)return;item.active=true;item.lane=lane;item.collected=false;item.mesh.position.set(LANES[lane],height||1.0,lz-chunk.zBase);item.mesh.visible=true;chunk.activeCoins.push(item);}
+function addDoubleBarrier(chunk,blockLane,lz){[0,1,2].filter(l=>l!==blockLane).forEach(l=>addBarrier(chunk,l,lz));}
+const CHUNK_TEMPLATES=[
+function(c){const z=c.zBase-5;addBarrier(c,0,z);addBarrier(c,2,z-8);addBarrier(c,1,z-16);addBarrier(c,0,z-24);addCoin(c,2,z-4);addCoin(c,1,z-12);addCoin(c,2,z-20);},
+function(c){const z=c.zBase-5;addDoubleBarrier(c,0,z);addDoubleBarrier(c,0,z-6);addCoin(c,0,z-3);addCoin(c,0,z-9);addBarrier(c,1,z-18);addBarrier(c,1,z-24);addCoin(c,2,z-21);},
+function(c){const z=c.zBase-5;addDoubleBarrier(c,1,z);addDoubleBarrier(c,1,z-8);addCoin(c,1,z-4,0.8);addBarrier(c,0,z-20);addBarrier(c,2,z-20);addCoin(c,1,z-20);},
+function(c){const z=c.zBase-6;addRamp(c,1,z);addBarrier(c,0,z-4);addBarrier(c,2,z-4);addBarrier(c,0,z-14);addCoin(c,1,z-2,1.6);addCoin(c,1,z-4,1.4);addCoin(c,2,z-20);},
+function(c){const z=c.zBase-5;[0,10,20].forEach((o,i)=>{const l=i%2===0?0:2;addBarrier(c,l,z-o);addCoin(c,l===0?2:0,z-o);});},
+function(c){const z=c.zBase-5;addBarrier(c,0,z);addBarrier(c,2,z);addCoin(c,1,z,0.8);addBarrier(c,0,z-10);addBarrier(c,2,z-10);addCoin(c,1,z-10,0.8);addBarrier(c,1,z-22);addCoin(c,0,z-22);},
+function(c){const z=c.zBase-5;addRamp(c,0,z);addRamp(c,2,z-10);addBarrier(c,1,z-5);addBarrier(c,1,z-15);addCoin(c,0,z-3,1.5);addCoin(c,2,z-13,1.5);},
+function(c){const z=c.zBase-5;addBarrier(c,1,z);addBarrier(c,0,z-12);addBarrier(c,2,z-12);addCoin(c,1,z-6);addCoin(c,0,z-18);addCoin(c,2,z-18);addBarrier(c,1,z-24);},
+function(c){const z=c.zBase-8;addCoin(c,0,z);addCoin(c,1,z);addCoin(c,2,z);addCoin(c,0,z-6);addCoin(c,1,z-6);addCoin(c,2,z-6);}
+];
+for(let i=0;i<8;i++){const chunk=new Chunk(spawnZ);if(i>0)CHUNK_TEMPLATES[Math.floor(Math.random()*CHUNK_TEMPLATES.length)](chunk);chunks.push(chunk);spawnZ-=CHUNK_LEN;}
+const ballGeo=new THREE.SphereGeometry(0.55,32,24),ballMat=new THREE.MeshStandardMaterial({color:0x00d4ff,roughness:0.15,metalness:0.9,emissive:0x003344,emissiveIntensity:0.4}),ball=new THREE.Mesh(ballGeo,ballMat);ball.castShadow=true;ball.position.set(0,0.55,0);scene.add(ball);
+const ballGlow=new THREE.PointLight(0x00d4ff,1.5,6);scene.add(ballGlow);
+const trailMats=[],trailMeshes=[],TRAIL_COUNT=16;
+for(let i=0;i<TRAIL_COUNT;i++){const r=0.55*(1-i/TRAIL_COUNT)*0.6,tm2=new THREE.Mesh(new THREE.SphereGeometry(r,8,6),new THREE.MeshBasicMaterial({color:0x00d4ff,transparent:true,opacity:(1-i/TRAIL_COUNT)*0.18}));tm2.visible=false;scene.add(tm2);trailMeshes.push(tm2);trailMats.push(tm2.material);}
+const trailPositions=[],camPos=new THREE.Vector3(),camTarget=new THREE.Vector3();let camShake=0;
+function getObstaclesAhead(lookDist){const pz=ball.position.z,ahead=[];chunks.forEach(c=>{c.activeObstacles.forEach(o=>{const dz=pz-(c.group.position.z+o.mesh.position.z);if(dz>-1&&dz<lookDist)ahead.push({lane:o.lane,dz:dz,type:o.type});});});return ahead.sort((a,b)=>a.dz-b.dz);}
+function getCoinsAhead(lookDist){const pz=ball.position.z,ahead=[];chunks.forEach(c=>{c.activeCoins.forEach(coin=>{if(!coin.collected){const dz=pz-(c.group.position.z+coin.mesh.position.z);if(dz>-1&&dz<lookDist)ahead.push({lane:coin.lane,dz:dz});}});});return ahead.sort((a,b)=>a.dz-b.dz);}
+function triggerAIWorker(){if(gameState!=='playing'||aiWorking)return;if(manualOverride>0){manualOverride--;aiThoughtEl.textContent='MANUAL OVERRIDE';return;}aiWorking=true;aiWorker.postMessage({obstacles:getObstaclesAhead(50),coins:getCoinsAhead(50),currentLane,dangerDist:18});}
+function setLane(lane){if(lane<0||lane>2)return;targetLane=lane;laneT=0;}
+document.addEventListener('keydown',e=>{if(gameState!=='playing')return;if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A'){manualOverride=90;setLane(Math.max(0,currentLane-1));}if(e.key==='ArrowRight'||e.key==='d'||e.key==='D'){manualOverride=90;setLane(Math.min(2,currentLane+1));}});
+let touchStartX=0;
+document.addEventListener('touchstart',e=>{touchStartX=e.touches[0].clientX},{passive:true});
+document.addEventListener('touchend',e=>{if(gameState!=='playing')return;const dx=e.changedTouches[0].clientX-touchStartX;if(Math.abs(dx)>30){manualOverride=90;setLane(dx<0?Math.max(0,currentLane-1):Math.min(2,currentLane+1));}},{passive:true});
+function checkCollision(){const px=ball.position.x,py=ball.position.y,pz=ball.position.z,zT=0.9+speed*1.5,cT=1.0+speed*1.5;for(const c of chunks){for(const o of c.activeObstacles){const ox=c.group.position.x+o.mesh.position.x,oy=c.group.position.y+o.mesh.position.y,oz=c.group.position.z+o.mesh.position.z;if(Math.abs(px-ox)<0.85&&Math.abs(pz-oz)<zT){if(o.type==='barrier'&&py<1.5)return true;if(o.type==='low'&&py<0.6)return true;if(o.type==='ramp'){velY=0.28;onGround=false;}}}for(const coin of c.activeCoins){if(coin.collected)continue;const ox=c.group.position.x+coin.mesh.position.x,oz=c.group.position.z+coin.mesh.position.z;if(Math.abs(px-ox)<1.0&&Math.abs(pz-oz)<cT){coin.collected=true;coin.mesh.visible=false;score+=10;}}}return false;}
+function triggerGameOver(){gameState='dead';document.getElementById('final-score').textContent=Math.floor(score);document.getElementById('start-screen').classList.add('hidden');document.getElementById('gameover-screen').classList.remove('hidden');document.getElementById('overlay').classList.remove('hidden');camShake=0.4;}
+function resetGame(){spawnZ=0;score=0;dist=0;speed=0;currentLane=1;targetLane=1;laneT=1;playerX=0;playerY=0.55;velY=0;onGround=true;ball.position.set(0,0.55,0);trailPositions.length=0;trailMeshes.forEach(m=>m.visible=false);chunks.forEach((c,i)=>{c.reset(spawnZ);if(i>0)CHUNK_TEMPLATES[Math.floor(Math.random()*CHUNK_TEMPLATES.length)](c);spawnZ-=CHUNK_LEN;});}
+document.getElementById('start-btn').addEventListener('click',()=>{document.getElementById('overlay').classList.add('hidden');gameState='playing';clock.start();});
+document.getElementById('restart-btn').addEventListener('click',()=>{resetGame();document.getElementById('overlay').classList.add('hidden');document.getElementById('gameover-screen').classList.add('hidden');gameState='playing';clock.start();});
+function animate(time){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),0.05);if(gameState==='playing'){dist+=speed;speed=Math.min(baseSpeed+dist*0.0004,maxSpeed);score+=speed*0.8;triggerAIWorker();laneT=Math.min(1,laneT+dt*6);const ease=laneT<0.5?2*laneT*laneT:1-Math.pow(-2*laneT+2,2)/2;const prevLaneX=LANES[currentLane],targX=LANES[targetLane];playerX=prevLaneX+(targX-prevLaneX)*ease;if(laneT>=1)currentLane=targetLane;if(!onGround){velY+=gravity;playerY+=velY;if(playerY<=0.55){playerY=0.55;velY=0;onGround=true;}}ball.position.set(playerX,playerY,ball.position.z-speed);ball.rotation.x-=speed*1.1;ball.rotation.z-=(targX-playerX)*0.1;ballGlow.position.copy(ball.position);trailPositions.unshift(ball.position.clone());if(trailPositions.length>TRAIL_COUNT)trailPositions.pop();trailMeshes.forEach((m,i)=>{if(i<trailPositions.length){m.visible=true;m.position.copy(trailPositions[i]);trailMats[i].opacity=(1-i/TRAIL_COUNT)*0.14;}else m.visible=false;});if(checkCollision())triggerGameOver();const oldest=chunks[0];if(oldest.zBase>ball.position.z+50){oldest.reset(spawnZ);CHUNK_TEMPLATES[Math.floor(Math.random()*CHUNK_TEMPLATES.length)](oldest);chunks.push(chunks.shift());spawnZ-=CHUNK_LEN;}sideWalls[0].position.z=ball.position.z-40;sideWalls[1].position.z=ball.position.z-40;document.getElementById('score').textContent=Math.floor(score);document.getElementById('speed-bar').style.width=((speed-baseSpeed)/(maxSpeed-baseSpeed))*100+'%';[0,1,2].forEach(i=>document.getElementById('ld'+i).classList.toggle('active',i===currentLane));ptL1.position.set(playerX,playerY+3,ball.position.z-2);ptL2.position.set(playerX,playerY+5,ball.position.z-15);const shakeX=camShake*(Math.random()-0.5)*2,shakeY=camShake*(Math.random()-0.5)*2;camShake*=0.85;camera.position.x+=(playerX*0.4+shakeX-camera.position.x)*0.12;camera.position.y+=(ball.position.y+5.5+shakeY-camera.position.y)*0.1;camera.position.z+=(ball.position.z+8-camera.position.z)*0.1;camTarget.set(playerX*0.2,ball.position.y+1,ball.position.z-18);camera.lookAt(camTarget);stars.position.z=ball.position.z;scene.fog.density=0.016+Math.sin(time*0.0003)*0.002;}chunks.forEach(c=>{c.activeCoins.forEach(coin=>{if(!coin.collected)coin.mesh.rotation.y+=0.04;});c.activeObstacles.forEach(obs=>{if(obs.glow)obs.glow.intensity=1.0+Math.sin(time*0.005+(c.group.position.z+obs.mesh.position.z))*0.5;});});renderer.render(scene,camera);}
+animate(0);
+</script>
+</body>
+</html>
